@@ -4,6 +4,7 @@ import sys
 from typing import Set
 from pymjc.back import assem, flowgraph, graph
 from pymjc.front import frame, temp
+from collections import deque
 
 
 class RegAlloc (temp.TempMap):
@@ -13,22 +14,55 @@ class RegAlloc (temp.TempMap):
         #TODO
 
     def temp_map(self, temp: temp.Temp) -> str:
-        #TODO
-        return temp.to_string()
+        temp_str: str = self.frame.temp_map(temp)
+        if (temp_str==None):
+            temp_str = self.color.temp_map(temp)
+        return temp_str
     
 
 class Color(temp.TempMap):
     def __init__(self, ig: InterferenceGraph, initial: temp.TempMap, registers: temp.TempList):
-        #TODO
-        pass
-    
+        self.interferenceGraph = ig
+        self.frame = initial
+        self.registers = registers        
+        self.pre_colored: set[graph.Node] = set()
+        self.normal_colored: set[graph.Node] = set()
+        self.initial_nodes: set[graph.Node] = set()
+        self.spill_nodes: set[graph.Node] = set()
+        self.coalesce_nodes: set[graph.Node] = set()
+        self.freeze_mv_nodes: set[graph.Node] = set()
+        self.active_mv_nodes: set[graph.Node] = set()
+        self.coalesce_mv_nodes: set[graph.Node] = set()
+        self.constrain_mv_nodes: set[graph.Node] = set()
+        self.node_stack: deque[graph.Node] = deque()
+        self.simplify: set[graph.Node] = set()
+        self.freeze: set[graph.Node] = set()
+        self.spill: set[graph.Node] = set()
+        self.spill_cost: dict[graph.Node, int] = {}
+        self.move_nodes_list: dict[graph.Node, set[graph.Node]] = {}
+        self.adjacence_sets: set[Edge] = set()
+        self.adjacence_list: dict[graph.Node, set[graph.Node]] = {}
+        self.node_alias_table: dict[graph.Node, graph.Node] = {}
+        self.node_color_table: dict[graph.Node, graph.Node] = {}
+        self.node_degree_table: dict[graph.Node, int] = {}
+        
     def spills(self) -> temp.TempList:
         #TODO
         return None
 
-    def temp_map(self, temp: temp.Temp) -> str:
+    def freeze(self) -> temp.TempList:
         #TODO
-        return temp.to_string()
+        return None
+
+    def combine(self) -> temp.TempList:
+        #TODO
+        return None
+
+    def temp_map(self, temp: temp.Temp) -> str:
+        node = self.node_color_table.get(self.interferenceGraph.tnode(temp))
+        
+        return self.frame.temp_map(self.interferenceGraph.gtemp(node))
+
 
 class InterferenceGraph(graph.Graph):
     
@@ -60,8 +94,6 @@ class Liveness (InterferenceGraph):
         #The table maps complies with: <Node, Set[Temp]>
         self.in_node_table = {}
         self.out_node_table = {}
-        self.gen_node_table = {}
-        self.kill_node_table = {}
 
         #Util map tables
         #<Node, Temp>
@@ -72,7 +104,6 @@ class Liveness (InterferenceGraph):
         #Move list
         self.move_list: MoveList = None
 
-        self.build_gen_and_kill()
         self.build_in_and_out()
         self.build_interference_graph()
     
@@ -149,16 +180,59 @@ class Liveness (InterferenceGraph):
     def moves(self) -> MoveList:
         return self.move_list
 
-    def build_gen_and_kill(self):
-        #TODO
-        pass
-
     def build_in_and_out(self):
-        #TODO
+        in_node_table = {}
+        out_node_table = {}
+       
+        node_list: graph.NodeList = self.flowgraph.mynodes
+
+        while node_list.head is not None:
+            self.in_node_table[node_list.head.to_string()] = {}
+            self.out_node_table[node_list.head.to_string()] = {}
+            node_list = node_list.tail
+
+        while True:
+            node_list: graph.NodeList = self.nodes()
+            while node_list != None:
+                in_n: Set = self.in_node_table.get(node_list.head)
+                out_n: Set = self.out(node_list.head)
+
+                in_node_table[node_list.head.to_string()] = in_n
+                out_node_table[node_list.head.to_string()] = out_n
+
+                use_n: Set = self.flowgraph.use(node_list.head)
+                def_n: Set = self.flowgraph.deff(node_list.head)
+
+                union_in_set = use_n.union(out_n.difference(def_n))
+                self.in_node_table[node_list.head.to_string()] = union_in_set
+
+                succ: Set = node_list.head.succ()
+                for s in succ:
+                    out_n.union(s)
+
+                self.out_node_table[node_list.head.to_string()] = out_n
+
+                node_list = node_list.tail
+          
+            if in_node_table.values() == self.in_node_table.values() and \
+               out_node_table.values() == self.out_node_table.values():
+              break
+
         pass
 
     def build_interference_graph(self):
-        #TODO
+        node_list: graph.NodeList = self.flowgraph.mynodes
+
+        while node_list is not None:
+
+            if self.flowgraph.is_move(node_list.head):
+                self.move_handler(node_list.head)
+
+            else:
+                self.node_handler(node_list.head)
+            
+            node_list = node_list.tail
+            
         pass
 
 class Edge():
@@ -197,4 +271,4 @@ class MoveList():
    def __init__(self, s: graph.Node, d: graph.Node, t: MoveList):
       self.src: graph.Node = s
       self.dst: graph.Node = d
-      self.tail: MoveList = 
+      self.tail: MoveList = t
